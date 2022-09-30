@@ -1,0 +1,18 @@
+#include <Stepper.h>
+const int revolucionesStepper = 2048;
+Stepper myStepper(revolucionesStepper, 8, 10, 9, 11);
+int conversion = revolucionesStepper / 1000;
+ 
+void setup() {
+  Serial.begin(9600);
+}
+ 
+void loop() {
+  int pot = analogRead(A0);
+  int velocidad = map(pot, 0, 1023, 0, 20);
+  Serial.println(velocidad);
+  if (velocidad > 0) {
+    myStepper.setSpeed(velocidad);
+    myStepper.step(conversion);
+  }
+}
