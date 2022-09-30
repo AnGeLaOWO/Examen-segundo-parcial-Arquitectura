@@ -1,0 +1,215 @@
+_CONFIG _CONFIG2, _BOR4V_BOR40V & _WRT_OFF
+;
+;___________________________________________________________________________________________________________________
+;___________________________________________________________________________________________________________________
+;DEFINICION DE VARIABLES
+;___________________________________________________________________________________________________________________
+	GPR_VAR		UDATA		
+	ADC		RES	1	
+	PWM_TEMP	RES	1
+	PWM		RES 	1
+	LSB_PWM		RES	1
+	MSB_PWM		RES	1
+	W_TEMP		RES	1	
+	STATUS_TEMP	RES	1
+;___________________________________________________________________________________________________________________
+;VECTOR DE REINICIO
+;___________________________________________________________________________________________________________________
+
+RES_VECT	CODE	0x0000
+    GOTO	START	
+MAIN_PROG CODE			
+
+;___________________________________________________________________________________________________________________
+SET_PWM MACRO CCPxCON, DCxB0, DCxB1, CCPRxL
+	BCF STATUS, C		
+	RRF PWM_TEMP, F		
+				
+	BTFSS STATUS, C
+	BSF CCPxCON, DCxB0
+	BTFSC STATUS, C
+	BCF CCPxCON, DCxB0
+
+	BCF STATUS, C	
+	RRF PWM_TEMP, F		
+				
+	BTFSS STATUS, C
+	BSF CCPxCON, DCxB1
+	BTFSC STATUS, C
+	BCF CCPxCON, DCxB1
+
+				 
+	MOVF PWM_TEMP, W
+	MOVWF CCPRxL
+ENDM
+;___________________________________________________________________________________________________________________
+START 			
+
+SETUP:
+	BSF STATUS, RP0
+	BCF STATUS, RP1		
+
+	CLRF TRISD
+	
+	;OSCILADOR__________________________________________________________________________________________________
+	BCF OSCCON, IRCF2
+	BSF OSCCON, IRCF1
+	BSF OSCCON, IRCF0	
+
+	BCF OSCCON, OSTS	
+
+	BSF OSCCON, HTS		
+	BSF OSCCON, SCS		
+
+	;ADC________________________________________________________________________________________________________
+	BSF TRISA, RA0		
+	BSF TRISB, RB2		
+
+	BCF ADCON1, VCFG1	
+	BCF ADCON1, VCFG0	
+
+	BCF ADCON1, ADFM	
+
+	BSF PIE1, ADIE		
+
+	BSF STATUS, RP1		
+
+	CLRF ANSEL		
+	CLRF ANSELH		
+
+	BSF ANSEL, ANS0		
+	BSF ANSEL, ANS8		
+
+	BCF STATUS, RP0
+	BCF STATUS, RP1		
+
+	;SELECCION DEL RELOJ PARA LA CONVERSION ANALGICO-DIGITAL
+	BSF ADCON0, ADCS1
+	BSF ADCON0, ADCS1	
+
+	;RA0 ES CANAL AN0
+	BCF ADCON0, CHS3
+	BCF ADCON0, CHS2
+	BCF ADCON0, CHS1
+	BCF ADCON0, CHS0	
+	
+	BSF ADCON0, ADON	
+
+	BCF PIR1, ADIF		
+
+	;PWM___________________________________________________________________________________________________________________
+	
+	BSF STATUS, RP0		
+	
+	BSF TRISC, RC1		
+	BSF TRISC, RC2	
+
+	MOVLW .155 		
+	MOVWF PR2		
+
+	BCF STATUS, RP0		
+
+	BSF CCP2CON, CCP2M3
+	BSF CCP2CON, CCP2M2
+	BSF CCP2CON, CCP2M1
+	BSF CCP2CON, CCP2M0	
+
+	BCF CCP1CON, P1M1
+	BCF CCP1CON, P1M0	
+
+	BSF CCP1CON, CCP1M3
+	BSF CCP1CON, CCP1M2
+	BCF CCP1CON, CCP1M1
+	BCF CCP1CON, CCP1M0	
+
+	BSF CCP2CON, DC2B1
+	BSF CCP2CON, DC2B0
+
+	BSF CCP1CON, DC1B1
+	BSF CCP1CON, DC1B0	
+
+	MOVLW B'00000111'
+	MOVWF CCPR2L		
+
+	MOVLW B'00000111'
+	MOVWF CCPR1L		
+
+	;TMR2_____________________________________________________________________________________________________
+	BCF PIR1, TMR2IF	
+		
+	BSF T2CON, T2CKPS1
+	BSF T2CON, T2CKPS0
+
+	BSF T2CON, TMR2ON	
+
+CHECKTMR2:
+	;COMPROBACION DEL BIT IDENTIFICADO Y SALTO DE INTRUCCION 
+	BTFSS PIR1, TMR2IF
+	GOTO CHECKTMR2
+
+	BCF PIR1, TMR2IF
+
+	BSF STATUS, RP0		
+
+	BCF TRISC, RC1		
+	BCF TRISC, RC2
+
+	BCF STATUS, RP0		
+	
+	;BSF INTCON, GIE	
+	CLRF PORTD
+LOOP:
+;___________________________________________________________________________________________________________________
+;VERIFICO QUE PIN ANALOGICO ESTE ENVIANDO SEÑALES
+	BTFSS ADCON0, CHS3
+	MOVLW B'0'
+	BTFSC ADCON0, CHS3
+	MOVLW B'1'
+	MOVWF PWM
+	
+	;CAMBIO DE ENTRADA ANALOGICA
+	BTFSC PWM, 0
+	BCF ADCON0, CHS3
+	BTFSS PWM, 0
+	BSF ADCON0, CHS3
+	;____________________________________________________________________________________________________________
+	
+	BSF ADCON0, ADON	
+	BSF ADCON0, GO		
+	
+	CHECKADC:
+	BTFSC ADCON0, GO	
+	GOTO CHECKADC		
+	
+	BCF PIR1, ADIF		
+	
+	CLRF PWM_TEMP 		
+	
+	MOVF ADRESH, W
+	MOVWF ADC		
+	
+	BCF STATUS, C 		
+	MOVLW .3		
+	SUBWF ADC, F		
+	BTFSC STATUS, C	
+	INCF PWM_TEMP		
+	BTFSC STATUS, C
+	GOTO $-6		
+	
+	MOVLW .16		
+	ADDWF PWM_TEMP, F	
+	
+	BTFSC PWM, 0		
+	GOTO PWM1
+	SET_PWM CCP2CON, DC2B0, DC2B1, CCPR2L
+	
+	GOTO LOOP  		
+
+PWM1:				
+	SET_PWM CCP1CON, DC1B0, DC1B1, CCPR1L	
+	MOVF PWM_TEMP, W	
+	MOVWF PORTD		
+	
+	GOTO LOOP		
+				
+	END			
